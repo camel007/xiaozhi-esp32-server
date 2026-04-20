@@ -1,8 +1,8 @@
 server:
   ip: 0.0.0.0
-  port: 8000
+  port: 18000
   http_port: 8003
-  websocket: ws://120.24.28.208:8000/xiaozhi/v1/
+  websocket: ws://120.24.28.208:18000/xiaozhi/v1/
   vision_explain: null
   enable_vision: false
   timezone_offset: +8
