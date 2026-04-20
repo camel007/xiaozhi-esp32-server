@@ -41,10 +41,28 @@ class ASRProvider(ASRProviderBase):
         self.enable_multilingual = (
             False if str(enable_multilingual).lower() == "false" else True
         )
-        if self.enable_multilingual:
+        configured_ws_url = config.get("ws_url")
+        if configured_ws_url:
+            self.ws_url = configured_ws_url
+        elif self.enable_multilingual:
             self.ws_url = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream"
         else:
             self.ws_url = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
+
+        default_resource_id = (
+            "volc.seedasr.sauc.duration"
+            if "bigmodel_async" in self.ws_url
+            else "volc.bigasr.sauc.duration"
+        )
+        self.resource_id = config.get("resource_id", default_resource_id)
+        self.model_name = config.get(
+            "model_name",
+            "bigmodel2.0" if self.resource_id.startswith("volc.seedasr") else "bigmodel",
+        )
+        self.enable_nonstream = bool(config.get("enable_nonstream", True))
+        self.enable_itn = bool(config.get("enable_itn", True))
+        self.enable_punc = bool(config.get("enable_punc", True))
+        self.enable_ddc = bool(config.get("enable_ddc", False))
         self.uid = config.get("uid", "streaming_asr_service")
         self.workflow = config.get(
             "workflow", "audio_in,resample,partition,vad,fe,decode,itn,nlu_punctuate"
@@ -61,6 +79,8 @@ class ASRProvider(ASRProviderBase):
         self.secret = config.get("secret", "access_secret")
         end_window_size = config.get("end_window_size")
         self.end_window_size = int(end_window_size) if end_window_size else 200
+        self.boosting_table_id = config.get("boosting_table_id", "")
+        self.correct_table_id = config.get("correct_table_id", "")
 
     async def open_audio_channels(self, conn):
         await super().open_audio_channels(conn)
@@ -280,6 +300,40 @@ class ASRProvider(ASRProviderBase):
                 logger.bind(tag=TAG).debug(f"发送结束音频帧时出错: {e}")
 
     def construct_request(self, reqid):
+        request_config = {
+            "reqid": reqid,
+            "show_utterances": True,
+            "result_type": self.result_type,
+            "sequence": 1,
+            "end_window_size": self.end_window_size,
+        }
+
+        # 双向流式优化版新增参数
+        if "bigmodel_async" in self.ws_url:
+            request_config.update(
+                {
+                    "model_name": self.model_name,
+                    "enable_nonstream": self.enable_nonstream,
+                    "enable_itn": self.enable_itn,
+                    "enable_punc": self.enable_punc,
+                    "enable_ddc": self.enable_ddc,
+                }
+            )
+        else:
+            request_config["workflow"] = self.workflow
+
+        corpus = {}
+        if self.boosting_table_id:
+            corpus["boosting_table_id"] = self.boosting_table_id
+        elif self.boosting_table_name:
+            corpus["boosting_table_name"] = self.boosting_table_name
+        if self.correct_table_id:
+            corpus["correct_table_id"] = self.correct_table_id
+        elif self.correct_table_name:
+            corpus["correct_table_name"] = self.correct_table_name
+        if corpus:
+            request_config["corpus"] = corpus
+
         req = {
             "app": {
                 "appid": self.appid,
@@ -287,18 +341,7 @@ class ASRProvider(ASRProviderBase):
                 "token": self.access_token,
             },
             "user": {"uid": self.uid},
-            "request": {
-                "reqid": reqid,
-                "workflow": self.workflow,
-                "show_utterances": True,
-                "result_type": self.result_type,
-                "sequence": 1,
-                "end_window_size": self.end_window_size,
-                "corpus": {
-                    "boosting_table_name": self.boosting_table_name,
-                    "correct_table_name": self.correct_table_name,
-                }
-            },
+            "request": request_config,
             "audio": {
                 "format": self.format,
                 "codec": self.codec,
@@ -322,7 +365,7 @@ class ASRProvider(ASRProviderBase):
         return {
             "X-Api-App-Key": self.appid,
             "X-Api-Access-Key": self.access_token,
-            "X-Api-Resource-Id": "volc.bigasr.sauc.duration",
+            "X-Api-Resource-Id": self.resource_id,
             "X-Api-Connect-Id": str(uuid.uuid4()),
         }
 

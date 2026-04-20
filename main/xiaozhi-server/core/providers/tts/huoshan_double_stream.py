@@ -201,6 +201,9 @@ class TTSProvider(TTSProviderBase):
         enable_ws_reuse_value = config.get("enable_ws_reuse", True)
         self.enable_ws_reuse = False if str(enable_ws_reuse_value).lower() == 'false' else True
         self.tts_text = ""
+        self.current_sentence_id = None
+        self._current_stream_text = ""
+        self._seed_first_packet_sent = False
 
         model_key_msg = check_model_key("TTS", self.access_token)
         if model_key_msg:
@@ -305,6 +308,9 @@ class TTSProvider(TTSProviderBase):
                         if not getattr(self.conn, "sentence_id", None): 
                             self.conn.sentence_id = uuid.uuid4().hex
                             logger.bind(tag=TAG).debug(f"自动生成新的 会话ID: {self.conn.sentence_id}")
+                        self.current_sentence_id = self.conn.sentence_id
+                        self._current_stream_text = ""
+                        self._seed_first_packet_sent = False
 
                         logger.bind(tag=TAG).debug("开始启动TTS会话...")
                         future = asyncio.run_coroutine_threadsafe(
@@ -372,6 +378,7 @@ class TTSProvider(TTSProviderBase):
             filtered_text = MarkdownCleaner.clean_markdown(text)
 
             if filtered_text:
+                self._current_stream_text += filtered_text
                 # 发送文本
                 await self.send_text(self.voice, filtered_text, self.conn.sentence_id)
             return
@@ -521,14 +528,23 @@ class TTSProvider(TTSProviderBase):
                     ):
                         # 处理seed-tts-2.0文本字幕
                         if self.resource_type:
-                            tts_text = self.get_tts_text(self.conn.sentence_id)
-                            if tts_text:
+                            if not self._seed_first_packet_sent:
+                                tts_text = (
+                                    self.get_tts_text(self.conn.sentence_id)
+                                    or self._current_stream_text
+                                )
                                 logger.bind(tag=TAG).info(
-                                    f"句子语音生成成功： {tts_text}"
+                                    f"句子语音生成开始： {tts_text}"
                                 )
                                 self.tts_audio_queue.put(
-                                    (SentenceType.FIRST, [], tts_text)
+                                    (
+                                        SentenceType.FIRST,
+                                        [],
+                                        tts_text,
+                                        getattr(self, "current_sentence_id", None),
+                                    )
                                 )
+                                self._seed_first_packet_sent = True
                                 self.clear_tts_text(self.conn.sentence_id)
                         self.wav_to_opus_data_audio_raw_stream(res.payload, callback=self.handle_opus)
                     elif not self.resource_type and res.optional.event == EVENT_TTSSentenceEnd:
@@ -536,6 +552,8 @@ class TTSProvider(TTSProviderBase):
                     elif res.optional.event == EVENT_SessionFinished:
                         logger.bind(tag=TAG).debug(f"会话结束～～")
                         self.activate_session = False
+                        self._seed_first_packet_sent = False
+                        self._current_stream_text = ""
                         self._process_before_stop_play_files()
                         # 非复用模式下，会话结束后发送 FinishConnection
                         if not self.enable_ws_reuse:

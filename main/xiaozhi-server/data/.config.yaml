@@ -50,9 +50,9 @@ prompt: |
 
 selected_module:
   VAD: SileroVAD
-  ASR: FunASRRealtime
-  LLM: Qwen36PlusLLM
-  TTS: QwenRealtimeTTS
+  ASR: DoubaoStreamASR
+  LLM: DoubaoSeed2MiniLLM
+  TTS: HuoshanDoubleStreamTTS
   Memory: nomem
   Intent: nointent
 
@@ -65,27 +65,39 @@ Memory:
     type: nomem
 
 ASR:
-  FunASRRealtime:
-    type: funasr_realtime
-    api_key: ""
-    model: fun-asr-realtime
+  DoubaoStreamASR:
+    type: doubao_stream
+    appid: ""
+    access_token: ""
+    ws_url: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async
+    resource_id: volc.seedasr.sauc.duration
+    model_name: bigmodel2.0
+    cluster: volcengine_input_common
+    enable_nonstream: true
+    enable_itn: true
+    enable_punc: true
+    enable_ddc: false
     format: pcm
+    codec: pcm
     sample_rate: 16000
-    semantic_punctuation_enabled: false
-    ws_url: wss://dashscope.aliyuncs.com/api-ws/v1/inference
+    bits: 16
+    channel: 1
+    language: zh-CN
+    end_window_size: 200
     output_dir: tmp/
 
 LLM:
-  Qwen36PlusLLM:
+  DoubaoSeed2MiniLLM:
     type: openai
     api_key: ""
-    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    model_name: qwen3.6-plus
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    model_name: doubao-seed-2-0-mini-260215
     temperature: 0.5
     max_tokens: 260
     top_p: 0.8
     extra_body:
-      enable_thinking: false
+      thinking:
+        type: disabled
     timeout:
       pool: 5
       connect: 5
@@ -93,17 +105,18 @@ LLM:
       read: 120
 
 TTS:
-  QwenRealtimeTTS:
-    type: qwen_realtime
-    api_key: ""
-    model: qwen3-tts-instruct-flash-realtime
-    mode: commit
-    voice: Cherry
-    response_format: pcm_24000
-    instructions: 使用温柔、自然、适合儿童科普讲解的中文语气。
-    optimize_instructions: true
-    first_commit_chars: 24
-    commit_chars: 40
-    commit_punctuations: "。！？!?；;\n"
-    ws_url: wss://dashscope.aliyuncs.com/api-ws/v1/realtime
+  HuoshanDoubleStreamTTS:
+    type: huoshan_double_stream
+    ws_url: wss://openspeech.bytedance.com/api/v3/tts/bidirection
+    appid: ""
+    access_token: ""
+    resource_id: seed-tts-2.0
+    speaker: zh_female_xiaohe_uranus_bigtts
+    enable_ws_reuse: true
+    audio_params:
+      speech_rate: 0
+      loudness_rate: 0
+    additions:
+      post_process:
+        pitch: 0
     output_dir: tmp/
