@@ -80,6 +80,7 @@ class TTSProvider(TTSProviderBase):
         self._first_packet_sent = False
         self._last_packet_sent = False
         self._current_text = ""
+        self._audio_chunk_count = 0
 
         self._apply_percentage_params(config)
 
@@ -108,6 +109,7 @@ class TTSProvider(TTSProviderBase):
                     self._current_text = ""
                     self._first_packet_sent = False
                     self._last_packet_sent = False
+                    self._audio_chunk_count = 0
                     future = asyncio.run_coroutine_threadsafe(
                         self.start_session(message.sentence_id),
                         loop=self.conn.loop,
@@ -150,6 +152,11 @@ class TTSProvider(TTSProviderBase):
 
             if event_type == "response.audio.delta":
                 pcm_bytes = base64.b64decode(response["delta"])
+                self._audio_chunk_count += 1
+                if self._audio_chunk_count == 1:
+                    logger.bind(tag=TAG).debug(
+                        f"Qwen-Realtime-TTS 收到首个音频分片: {len(pcm_bytes)} bytes"
+                    )
                 if not self._first_packet_sent:
                     self.tts_audio_queue.put(
                         (
@@ -172,6 +179,10 @@ class TTSProvider(TTSProviderBase):
                     return
                 self._active = False
                 self._last_packet_sent = True
+                logger.bind(tag=TAG).debug(
+                    "Qwen-Realtime-TTS 响应结束: "
+                    f"chunks={self._audio_chunk_count}, text_len={len(self._current_text)}"
+                )
                 self.tts_audio_queue.put(
                     (
                         SentenceType.LAST,
@@ -214,6 +225,7 @@ class TTSProvider(TTSProviderBase):
     async def text_to_speak(self, text, output_file):
         if not self.qwen_tts or not self._active:
             return
+        logger.bind(tag=TAG).debug(f"Qwen-Realtime-TTS 追加文本: {text}")
         await asyncio.to_thread(self.qwen_tts.append_text, text)
 
     async def finish_session(self, session_id):
@@ -235,4 +247,5 @@ class TTSProvider(TTSProviderBase):
         self._first_packet_sent = False
         self._last_packet_sent = False
         self._current_text = ""
+        self._audio_chunk_count = 0
         self.qwen_tts = None

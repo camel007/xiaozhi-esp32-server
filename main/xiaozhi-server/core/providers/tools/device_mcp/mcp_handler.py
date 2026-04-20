@@ -244,10 +244,15 @@ async def send_mcp_initialize_message(conn: "ConnectionHandler"):
     auth = AuthToken(conn.config["server"]["auth_key"])
     token = auth.generate_token(conn.headers.get("device-id"))
 
-    vision = {
-        "url": vision_url,
-        "token": token,
+    capabilities = {
+        "roots": {"listChanged": True},
+        "sampling": {},
     }
+    if vision_url:
+        capabilities["vision"] = {
+            "url": vision_url,
+            "token": token,
+        }
 
     payload = {
         "jsonrpc": "2.0",
@@ -255,11 +260,7 @@ async def send_mcp_initialize_message(conn: "ConnectionHandler"):
         "method": "initialize",
         "params": {
             "protocolVersion": "2024-11-05",
-            "capabilities": {
-                "roots": {"listChanged": True},
-                "sampling": {},
-                "vision": vision,
-            },
+            "capabilities": capabilities,
             "clientInfo": {
                 "name": "XiaozhiClient",
                 "version": "1.0.0",

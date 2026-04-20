@@ -529,7 +529,7 @@ def get_vision_url(config: dict) -> str:
         str: vision URL
     """
     server_config = config["server"]
-    vision_explain = server_config.get("vision_explain", "")
+    vision_explain = server_config.get("vision_explain") or ""
     if "你的" in vision_explain:
         local_ip = get_local_ip()
         port = int(server_config.get("http_port", 8003))

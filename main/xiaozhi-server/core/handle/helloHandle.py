@@ -46,16 +46,27 @@ async def handleHelloMessage(conn: "ConnectionHandler", msg_json):
         format = audio_params.get("format")
         conn.logger.bind(tag=TAG).debug(f"客户端音频格式: {format}")
         conn.audio_format = format
-        conn.welcome_msg["audio_params"] = audio_params
+        conn.logger.bind(tag=TAG).debug(
+            f"服务端下行音频参数: {conn.welcome_msg.get('audio_params')}"
+        )
     features = msg_json.get("features")
     if features:
         conn.logger.bind(tag=TAG).debug(f"客户端特性: {features}")
         conn.features = features
         if features.get("mcp"):
-            conn.logger.bind(tag=TAG).debug("客户端支持MCP")
-            conn.mcp_client = MCPClient()
-            # 发送初始化
-            asyncio.create_task(send_mcp_initialize_message(conn))
+            server_config = conn.config.get("server", {})
+            vision_enabled = server_config.get(
+                "enable_vision", bool(server_config.get("vision_explain"))
+            )
+            mcp_enabled = vision_enabled or bool(conn.config.get("mcp_endpoint"))
+            if mcp_enabled:
+                conn.logger.bind(tag=TAG).debug("客户端支持MCP，服务端准备初始化MCP")
+                conn.mcp_client = MCPClient()
+                asyncio.create_task(send_mcp_initialize_message(conn))
+            else:
+                conn.logger.bind(tag=TAG).debug(
+                    "客户端支持MCP，但服务端未启用MCP能力，跳过初始化"
+                )
 
     await conn.websocket.send(json.dumps(conn.welcome_msg))
 
