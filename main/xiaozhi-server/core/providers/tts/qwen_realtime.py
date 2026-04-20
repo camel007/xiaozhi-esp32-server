@@ -31,6 +31,8 @@ class _QwenRealtimeCallback(QwenTtsRealtimeCallback):
         logger.bind(tag=TAG).debug(
             f"Qwen-Realtime-TTS 连接关闭: code={close_status_code}, msg={close_msg}"
         )
+        if self.provider._finish_requested and not self.provider._last_packet_sent:
+            self.provider._emit_last_packet("close")
         self.provider._active = False
 
     def on_event(self, response) -> None:
@@ -66,6 +68,7 @@ class TTSProvider(TTSProviderBase):
 
         self.instructions = config.get("instructions")
         self.optimize_instructions = bool(config.get("optimize_instructions", False))
+        self.mode = config.get("mode", "commit")
         self.ws_url = config.get(
             "ws_url", "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
         )
@@ -89,6 +92,8 @@ class TTSProvider(TTSProviderBase):
         self._audio_chunk_count = 0
         self._pending_commit_text = ""
         self._commit_count = 0
+        self._response_done_count = 0
+        self._finish_requested = False
 
         self._apply_percentage_params(config)
 
@@ -120,6 +125,8 @@ class TTSProvider(TTSProviderBase):
                     self._audio_chunk_count = 0
                     self._pending_commit_text = ""
                     self._commit_count = 0
+                    self._response_done_count = 0
+                    self._finish_requested = False
                     future = asyncio.run_coroutine_threadsafe(
                         self.start_session(message.sentence_id),
                         loop=self.conn.loop,
@@ -184,26 +191,37 @@ class TTSProvider(TTSProviderBase):
                 )
                 return
 
-            if event_type in ("response.done", "session.finished"):
-                if self._last_packet_sent:
-                    return
-                self._active = False
-                self._last_packet_sent = True
+            if event_type == "response.done":
+                self._response_done_count += 1
                 logger.bind(tag=TAG).debug(
-                    "Qwen-Realtime-TTS 响应结束: "
-                    f"chunks={self._audio_chunk_count}, text_len={len(self._current_text)}, commits={self._commit_count}"
+                    "Qwen-Realtime-TTS 分段响应完成: "
+                    f"responses={self._response_done_count}, chunks={self._audio_chunk_count}, commits={self._commit_count}"
                 )
-                self.tts_audio_queue.put(
-                    (
-                        SentenceType.LAST,
-                        [],
-                        self._current_text,
-                        getattr(self, "current_sentence_id", None),
-                    )
-                )
+                return
+
+            if event_type == "session.finished":
+                self._emit_last_packet("session.finished")
                 return
         except Exception as e:
             logger.bind(tag=TAG).error(f"处理 Qwen-Realtime-TTS 事件失败: {e}")
+
+    def _emit_last_packet(self, reason: str) -> None:
+        if self._last_packet_sent:
+            return
+        self._active = False
+        self._last_packet_sent = True
+        logger.bind(tag=TAG).debug(
+            "Qwen-Realtime-TTS 会话结束: "
+            f"reason={reason}, chunks={self._audio_chunk_count}, commits={self._commit_count}, responses={self._response_done_count}, text_len={len(self._current_text)}"
+        )
+        self.tts_audio_queue.put(
+            (
+                SentenceType.LAST,
+                [],
+                self._current_text,
+                getattr(self, "current_sentence_id", None),
+            )
+        )
 
     async def start_session(self, session_id):
         await self.close()
@@ -224,7 +242,7 @@ class TTSProvider(TTSProviderBase):
         session_params = {
             "voice": self.voice,
             "response_format": self.response_format,
-            "mode": "server_commit",
+            "mode": self.mode,
         }
         if self.instructions:
             session_params["instructions"] = self.instructions
@@ -256,6 +274,8 @@ class TTSProvider(TTSProviderBase):
     async def _commit_pending_text(self, reason: str):
         if not self.qwen_tts or not self._active:
             return
+        if self.mode != "commit":
+            return
         pending_text = self._pending_commit_text.strip()
         if not pending_text:
             return
@@ -276,6 +296,7 @@ class TTSProvider(TTSProviderBase):
         if not self.qwen_tts:
             return
         try:
+            self._finish_requested = True
             await self._commit_pending_text("finish")
             await asyncio.to_thread(self.qwen_tts.finish)
         except Exception as e:
@@ -295,4 +316,6 @@ class TTSProvider(TTSProviderBase):
         self._audio_chunk_count = 0
         self._pending_commit_text = ""
         self._commit_count = 0
+        self._response_done_count = 0
+        self._finish_requested = False
         self.qwen_tts = None
