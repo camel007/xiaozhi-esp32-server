@@ -1,4 +1,5 @@
 import os
+import copy
 import httpx
 import openai
 from openai.types import CompletionUsage
@@ -61,6 +62,10 @@ class LLMProvider(LLMProviderBase):
             f"意图识别参数初始化: {self.temperature}, {self.max_tokens}, {self.top_p}, {self.frequency_penalty}"
         )
 
+        self.extra_body = config.get("extra_body")
+        if not isinstance(self.extra_body, dict):
+            self.extra_body = None
+
         model_key_msg = check_model_key("LLM", self.api_key)
         if model_key_msg:
             logger.bind(tag=TAG).error(model_key_msg)
@@ -94,6 +99,9 @@ class LLMProvider(LLMProviderBase):
         for key, value in optional_params.items():
             if value is not None:
                 request_params[key] = value
+
+        if self.extra_body:
+            request_params["extra_body"] = copy.deepcopy(self.extra_body)
 
         responses = self.client.chat.completions.create(**request_params)
 
@@ -134,6 +142,9 @@ class LLMProvider(LLMProviderBase):
         for key, value in optional_params.items():
             if value is not None:
                 request_params[key] = value
+
+        if self.extra_body:
+            request_params["extra_body"] = copy.deepcopy(self.extra_body)
 
         stream = self.client.chat.completions.create(**request_params)
 

@@ -45,6 +45,7 @@ class TTSProvider(TTSProviderBase):
     AUDIO_FORMAT_MAP = {
         "pcm_24000": AudioFormat.PCM_24000HZ_MONO_16BIT,
     }
+    COMMIT_PUNCTUATIONS = "。！？!?；;\n"
 
     def __init__(self, config, delete_audio_file):
         super().__init__(config, delete_audio_file)
@@ -74,6 +75,11 @@ class TTSProvider(TTSProviderBase):
         )
         self.audio_file_type = "pcm"
         self.speed_ratio = float(config.get("speed_ratio", 1.0))
+        self.first_commit_chars = int(config.get("first_commit_chars", 24))
+        self.commit_chars = int(config.get("commit_chars", 40))
+        self.commit_punctuations = config.get(
+            "commit_punctuations", self.COMMIT_PUNCTUATIONS
+        )
 
         self.qwen_tts = None
         self._active = False
@@ -81,6 +87,8 @@ class TTSProvider(TTSProviderBase):
         self._last_packet_sent = False
         self._current_text = ""
         self._audio_chunk_count = 0
+        self._pending_commit_text = ""
+        self._commit_count = 0
 
         self._apply_percentage_params(config)
 
@@ -110,6 +118,8 @@ class TTSProvider(TTSProviderBase):
                     self._first_packet_sent = False
                     self._last_packet_sent = False
                     self._audio_chunk_count = 0
+                    self._pending_commit_text = ""
+                    self._commit_count = 0
                     future = asyncio.run_coroutine_threadsafe(
                         self.start_session(message.sentence_id),
                         loop=self.conn.loop,
@@ -181,7 +191,7 @@ class TTSProvider(TTSProviderBase):
                 self._last_packet_sent = True
                 logger.bind(tag=TAG).debug(
                     "Qwen-Realtime-TTS 响应结束: "
-                    f"chunks={self._audio_chunk_count}, text_len={len(self._current_text)}"
+                    f"chunks={self._audio_chunk_count}, text_len={len(self._current_text)}, commits={self._commit_count}"
                 )
                 self.tts_audio_queue.put(
                     (
@@ -227,11 +237,46 @@ class TTSProvider(TTSProviderBase):
             return
         logger.bind(tag=TAG).debug(f"Qwen-Realtime-TTS 追加文本: {text}")
         await asyncio.to_thread(self.qwen_tts.append_text, text)
+        self._pending_commit_text += text
+        if self._should_commit(text):
+            await self._commit_pending_text("stream")
+
+    def _should_commit(self, text: str) -> bool:
+        if not self._pending_commit_text.strip():
+            return False
+        if any(p in text for p in self.commit_punctuations):
+            return True
+        pending_len = len(self._pending_commit_text)
+        if not self._first_packet_sent and pending_len >= self.first_commit_chars:
+            return True
+        if self._first_packet_sent and pending_len >= self.commit_chars:
+            return True
+        return False
+
+    async def _commit_pending_text(self, reason: str):
+        if not self.qwen_tts or not self._active:
+            return
+        pending_text = self._pending_commit_text.strip()
+        if not pending_text:
+            return
+        commit_fn = getattr(self.qwen_tts, "commit", None)
+        if commit_fn is None:
+            logger.bind(tag=TAG).warning(
+                "当前 DashScope SDK 不支持 commit，无法启用低延迟流式 TTS"
+            )
+            return
+        self._pending_commit_text = ""
+        self._commit_count += 1
+        logger.bind(tag=TAG).debug(
+            f"Qwen-Realtime-TTS 提交分段[{reason}] #{self._commit_count}: {pending_text}"
+        )
+        await asyncio.to_thread(commit_fn)
 
     async def finish_session(self, session_id):
         if not self.qwen_tts:
             return
         try:
+            await self._commit_pending_text("finish")
             await asyncio.to_thread(self.qwen_tts.finish)
         except Exception as e:
             logger.bind(tag=TAG).warning(f"结束 Qwen-Realtime-TTS 会话失败: {e}")
@@ -248,4 +293,6 @@ class TTSProvider(TTSProviderBase):
         self._last_packet_sent = False
         self._current_text = ""
         self._audio_chunk_count = 0
+        self._pending_commit_text = ""
+        self._commit_count = 0
         self.qwen_tts = None
