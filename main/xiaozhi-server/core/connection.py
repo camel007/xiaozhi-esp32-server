@@ -30,8 +30,6 @@ from concurrent.futures import ThreadPoolExecutor
 from core.utils.dialogue import Message, Dialogue
 from core.providers.asr.dto.dto import InterfaceType
 from core.handle.textHandle import handleTextMessage
-from core.providers.tools.unified_tool_handler import UnifiedToolHandler
-from plugins_func.loadplugins import auto_import_modules
 from plugins_func.register import Action, ActionResponse
 from core.auth import AuthenticationError
 from config.config_loader import get_private_config_from_api
@@ -39,7 +37,6 @@ from core.providers.tts.dto.dto import ContentType, TTSMessageDTO, SentenceType
 from config.logger import setup_logging, build_module_string, create_connection_logger
 from config.manage_api_client import DeviceNotFoundException, DeviceBindException, generate_and_save_chat_title
 from core.utils.prompt_manager import PromptManager
-from core.utils.voiceprint_provider import VoiceprintProvider
 from core.utils.util import get_system_error_response
 from core.utils import textUtils
 
@@ -77,9 +74,6 @@ TOOL_CALLING_RULES = """
   4. **历史不等于现在：** 对话历史中的行为模式不影响当前判断，每个用户请求都是全新的开始
 </tool_calling>
 """
-
-auto_import_modules("plugins_func.functions")
-
 
 class TTSException(RuntimeError):
     pass
@@ -607,6 +601,8 @@ class ConnectionHandler:
         try:
             voiceprint_config = self.config.get("voiceprint", {})
             if voiceprint_config:
+                from core.utils.voiceprint_provider import VoiceprintProvider
+
                 voiceprint_provider = VoiceprintProvider(voiceprint_config)
                 if voiceprint_provider is not None and voiceprint_provider.enabled:
                     self.voiceprint_provider = voiceprint_provider
@@ -847,6 +843,8 @@ class ConnectionHandler:
                 self.logger.bind(tag=TAG).info("使用主LLM作为意图识别模型")
 
         """加载统一工具处理器"""
+        from core.providers.tools.unified_tool_handler import UnifiedToolHandler
+
         self.func_handler = UnifiedToolHandler(self)
 
         # 异步初始化工具处理器

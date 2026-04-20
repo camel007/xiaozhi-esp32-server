@@ -2,7 +2,6 @@ import asyncio
 from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
-from core.api.vision_handler import VisionHandler
 
 TAG = __name__
 
@@ -12,7 +11,12 @@ class SimpleHttpServer:
         self.config = config
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
-        self.vision_handler = VisionHandler(config)
+        self.enable_vision = bool(config.get("server", {}).get("enable_vision", True))
+        self.vision_handler = None
+        if self.enable_vision:
+            from core.api.vision_handler import VisionHandler
+
+            self.vision_handler = VisionHandler(config)
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """获取websocket地址
@@ -62,18 +66,22 @@ class SimpleHttpServer:
                             ),
                         ]
                     )
-                # 添加路由
-                app.add_routes(
-                    [
-                        web.get("/mcp/vision/explain", self.vision_handler.handle_get),
-                        web.post(
-                            "/mcp/vision/explain", self.vision_handler.handle_post
-                        ),
-                        web.options(
-                            "/mcp/vision/explain", self.vision_handler.handle_options
-                        ),
-                    ]
-                )
+                if self.enable_vision and self.vision_handler is not None:
+                    app.add_routes(
+                        [
+                            web.get(
+                                "/mcp/vision/explain", self.vision_handler.handle_get
+                            ),
+                            web.post(
+                                "/mcp/vision/explain",
+                                self.vision_handler.handle_post,
+                            ),
+                            web.options(
+                                "/mcp/vision/explain",
+                                self.vision_handler.handle_options,
+                            ),
+                        ]
+                    )
 
                 # 运行服务
                 runner = web.AppRunner(app)

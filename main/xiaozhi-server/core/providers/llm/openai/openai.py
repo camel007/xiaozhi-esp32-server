@@ -1,3 +1,4 @@
+import os
 import httpx
 import openai
 from openai.types import CompletionUsage
@@ -12,7 +13,11 @@ logger = setup_logging()
 class LLMProvider(LLMProviderBase):
     def __init__(self, config):
         self.model_name = config.get("model_name")
-        self.api_key = config.get("api_key")
+        self.api_key = (
+            config.get("api_key")
+            or os.getenv("DASHSCOPE_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
         if "base_url" in config:
             self.base_url = config.get("base_url")
         else:

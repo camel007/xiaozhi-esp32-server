@@ -46,6 +46,8 @@ async def monitor_stdin():
 async def main():
     check_ffmpeg_installed()
     config = load_config()
+    server_config = config.get("server", {})
+    vision_enabled = bool(server_config.get("enable_vision", True))
 
     # auth_key优先级：配置文件server.auth_key > manager-api.secret > 自动生成
     # auth_key用于jwt认证，比如视觉分析接口的jwt认证、ota接口的token生成与websocket认证
@@ -83,11 +85,12 @@ async def main():
             get_local_ip(),
             port,
         )
-    logger.bind(tag=TAG).info(
-        "视觉分析接口是\thttp://{}:{}/mcp/vision/explain",
-        get_local_ip(),
-        port,
-    )
+    if vision_enabled:
+        logger.bind(tag=TAG).info(
+            "视觉分析接口是\thttp://{}:{}/mcp/vision/explain",
+            get_local_ip(),
+            port,
+        )
     mcp_endpoint = config.get("mcp_endpoint", None)
     if mcp_endpoint is not None and "你" not in mcp_endpoint:
         # 校验MCP接入点格式

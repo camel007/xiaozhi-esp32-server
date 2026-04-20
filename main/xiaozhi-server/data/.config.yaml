@@ -1,0 +1,93 @@
+server:
+  ip: 0.0.0.0
+  port: 8000
+  http_port: 8003
+  websocket: ws://120.24.28.208:8000/xiaozhi/v1/
+  vision_explain: null
+  enable_vision: false
+  timezone_offset: +8
+  auth:
+    enabled: false
+
+log:
+  log_level: INFO
+  log_dir: tmp
+  log_file: server.log
+  data_dir: data
+
+delete_audio: true
+close_connection_no_voice_time: 120
+tts_timeout: 20
+enable_greeting: false
+enable_wakeup_words_response_cache: false
+enable_stop_tts_notify: false
+enable_websocket_ping: false
+mcp_endpoint: null
+context_providers: []
+voiceprint: {}
+prompt_template: prompt-minimal.txt
+
+prompt: |
+  你是一个适合 6 岁孩子使用的中文语音助手。
+  你的主要任务是回答儿童科普与日常问答，尤其擅长海洋、生物、自然知识。
+  请遵守这些要求：
+  1. 回答简短清楚，优先 2 到 4 句。
+  2. 多用孩子能理解的词，少用术语。
+  3. 如果内容较难，先给结论，再举一个形象比喻。
+  4. 语气温和、自然，不说教，不吓人。
+  5. 遇到不适合儿童的话题，简短回避并转回安全内容。
+
+selected_module:
+  VAD: SileroVAD
+  ASR: FunASRRealtime
+  LLM: Qwen36PlusLLM
+  TTS: QwenRealtimeTTS
+  Memory: nomem
+  Intent: nointent
+
+Intent:
+  nointent:
+    type: nointent
+
+Memory:
+  nomem:
+    type: nomem
+
+ASR:
+  FunASRRealtime:
+    type: funasr_realtime
+    api_key: ""
+    model: fun-asr-realtime
+    format: pcm
+    sample_rate: 16000
+    semantic_punctuation_enabled: false
+    ws_url: wss://dashscope.aliyuncs.com/api-ws/v1/inference
+    output_dir: tmp/
+
+LLM:
+  Qwen36PlusLLM:
+    type: openai
+    api_key: ""
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model_name: qwen3.6-plus
+    temperature: 0.6
+    max_tokens: 600
+    top_p: 0.9
+    timeout:
+      pool: 5
+      connect: 5
+      write: 10
+      read: 120
+
+TTS:
+  QwenRealtimeTTS:
+    type: qwen_realtime
+    api_key: ""
+    model: qwen3-tts-instruct-flash-realtime
+    voice: Cherry
+    response_format: pcm_24000
+    instructions: 使用温柔、自然、适合儿童科普讲解的中文语气。
+    optimize_instructions: true
+    ws_url: wss://dashscope.aliyuncs.com/api-ws/v1/realtime
+    output_dir: tmp/
+
