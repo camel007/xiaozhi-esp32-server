@@ -73,6 +73,10 @@ ASR:
     resource_id: volc.seedasr.sauc.duration
     model_name: bigmodel2.0
     cluster: volcengine_input_common
+    boosting_table_name: ""
+    correct_table_name: ""
+    boosting_table_id: ""
+    correct_table_id: ""
     enable_nonstream: true
     enable_itn: true
     enable_punc: true
